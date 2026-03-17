@@ -2,6 +2,7 @@
 export interface Message {
   role: 'user' | 'assistant';
   content: string;
+  id?: string; // 可选ID用于更新流式消息
 }
 
 export interface ChatRequest {
@@ -13,6 +14,12 @@ export interface ChatResponse {
   response: string;
   model: string;
   timestamp: string;
+}
+
+export interface StreamResponse {
+  content: string;
+  done?: boolean;
+  sessionId?: string;
 }
 
 export interface ErrorResponse {

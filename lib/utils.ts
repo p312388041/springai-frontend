@@ -3,9 +3,10 @@ export const scrollToBottom = (ref: React.RefObject<HTMLDivElement | null>) => {
   ref.current?.scrollIntoView({ behavior: "smooth" });
 };
 
-export const createMessage = (role: 'user' | 'assistant', content: string) => ({
+export const createMessage = (role: 'user' | 'assistant', content: string, id?: string) => ({
   role,
-  content
+  content,
+  ...(id && { id })
 });
 
 export const isValidMessage = (message: string): boolean => {

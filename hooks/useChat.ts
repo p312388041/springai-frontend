@@ -1,66 +1,83 @@
 'use client';
 
-/**
- * Custom hook for managing chat functionality in the AI chat application.
- * Handles message state, API communication, and UI loading states.
- */
-
 import { useState, useCallback } from 'react';
-import { Message, AIModel } from '@/lib/types';
-import { INITIAL_MESSAGES, AI_MODELS } from '@/lib/constants';
-import { chatAPI } from '@/services/chat';
+import { Message } from '@/lib/types';
 import { createMessage } from '@/lib/utils';
 
 export const useChat = () => {
-  // State for storing chat messages
-  const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
-  // State for tracking loading status during API calls
+  const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
-  // State for the currently selected AI model
-  const [selectedModel, setSelectedModel] = useState<AIModel>(AI_MODELS.V32);
 
-  /**
-   * Sends a message to the AI API and updates the chat state.
-   * @param content - The message content to send
-   */
   const sendMessage = useCallback(async (content: string) => {
-    const userMessage = createMessage('user', content);
-    setMessages(prev => [...prev, userMessage]);
+    setMessages(prev => [...prev, createMessage('user', content)]);
     setLoading(true);
+    setMessages(prev => [...prev, createMessage('assistant', '')]);
 
     try {
-      const response = await chatAPI.sendMessage({
-        message: content,
-        model: selectedModel
+      var url_local = "http://localhost:8080/api/chat/stream";
+      var sessionId = localStorage.getItem('sessionId');
+      if (sessionId) {
+        url_local = url_local + `?sessionId=${sessionId}`;
+      }
+
+      const response = await fetch(url_local, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: content })
       });
-      console.log('API Response:', response);
-      const assistantMessage = createMessage('assistant', response.data.reply);
-      const sessionId = response.data.sessionId;
-      localStorage.setItem('sessionId', sessionId);
-      setMessages(prev => [...prev, assistantMessage]);
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let reply = '';
+      let buffer = '';
+
+      while (reader) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value);
+        
+        // 处理完整的行
+        let lineEnd = buffer.indexOf('\n');
+        while (lineEnd !== -1) {
+          const line = buffer.substring(0, lineEnd);
+          buffer = buffer.substring(lineEnd + 1);
+          
+          if (line.startsWith('data:')) {
+            const content = line.substring(5);
+            if (content && content !== '[DONE]') {
+              reply += content;
+            }
+          }
+          
+          lineEnd = buffer.indexOf('\n');
+        }
+
+        setMessages(prev => {
+          const newMessages = [...prev];
+          newMessages[newMessages.length - 1].content = reply;
+          return newMessages;
+        });
+      }
+
+      // 处理最后可能没有换行的一行
+      if (buffer.startsWith('data:')) {
+        const content = buffer.substring(5);
+        if (content && content !== '[DONE]') {
+          reply += content;
+        }
+        setMessages(prev => {
+          const newMessages = [...prev];
+          newMessages[newMessages.length - 1].content = reply;
+          return newMessages;
+        });
+      }
     } catch (error) {
-      console.error('Error:', error);
-      const errorMessage = createMessage('assistant', '抱歉，发生了错误。请稍后再试。');
-      setMessages(prev => [...prev, errorMessage]);
+      console.error(error);
     } finally {
       setLoading(false);
     }
-  }, [selectedModel]);
-
-  /**
-   * Resets the chat to its initial state, clearing all messages.
-   */
-  const resetChat = useCallback(() => {
-    setMessages(INITIAL_MESSAGES);
   }, []);
 
-  // Return the chat state and functions for use in components
-  return {
-    messages,
-    loading,
-    selectedModel,
-    setSelectedModel,
-    sendMessage,
-    resetChat
-  };
+  return { messages, loading, sendMessage };
 };
